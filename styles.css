@@ -1,0 +1,158 @@
+/* Layout Reset */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#map {
+  flex: 1;
+  width: 100%;
+  z-index: 1;
+}
+
+#bottom-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.15);
+  border-top: 1px solid #dee2e6;
+  transform: translateY(calc(100% - 40px));
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#bottom-panel.open {
+  transform: translateY(0);
+}
+
+#pull-tab {
+  height: 40px;
+  background: #f8f9fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+  color: #495057;
+}
+
+#panel-content {
+  height: 350px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* Navigation & Status */
+#route-nav {
+  padding: 8px 6px;
+  background: #e9ecef;
+  border-bottom: 1px solid #dee2e6;
+}
+
+#status-bar {
+  background: #f8f9fa;
+  color: #495057;
+  min-height: 35px;
+}
+
+/* Weather Scroll Area */
+#weather-content {
+  flex: 1;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 15px;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+#weather-content .card {
+  flex: 0 0 auto;
+  transition: transform 0.2s ease;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  min-width: 140px;
+}
+
+/* Footer Styling */
+.panel-footer {
+  padding: 10px;
+  border-top: 1px solid #eee;
+  text-align: center;
+  background: #fff;
+}
+
+#clear-route-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #dc3545;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* UI Elements */
+.card {
+  transition: transform 0.2s ease;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  min-width: 140px;
+}
+
+.badge {
+  font-size: 0.85rem;
+  padding: 0.5em 0.8em;
+}
+
+#status-bar {
+  background: transparent;
+  min-height: 38px;
+}
+
+#status {
+  background: #f8f9fa;
+  border-color: #dee2e6;
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+  max-width: 80%;
+  text-align: center;
+}
+
+#popupLogin,
+#popupFilter {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  width: 300px;
+}
+
+#popupLogin.show,
+#popupFilter.show {
+  display: block;
+}

@@ -98,9 +98,32 @@ The code is mounted into the container, so edits to the PHP/JS/CSS show up on re
 
 ### How it's set up
 
-- **web** – `php:8.2-apache` with `mysqli`. The repo is mounted at `/var/www/html/WeatherApp` because the app uses `/WeatherApp/...` paths.
-- **db** – `mysql:8.0`. The `sql_setup/` folder is mounted as the init folder, so the schema and points load automatically. Data lives in a named volume so it survives restarts.
-- **phpmyadmin** – for looking at the tables.
+```mermaid
+flowchart LR
+    browser["Your browser"]
+    nws["National Weather Service API"]
+
+    subgraph docker["Docker Compose"]
+        web["<b>web</b><br/>PHP 8.2 + Apache<br/>:8080"]
+        db[("<b>db</b><br/>MySQL 8.0<br/>:3307")]
+        pma["<b>phpmyadmin</b><br/>:8081"]
+    end
+
+    browser -- "the app" --> web
+    browser -- "view tables" --> pma
+    web -- "points, logins, route log" --> db
+    pma --> db
+    web -- "forecasts" --> nws
+```
+
+| Container      | What it does                                                         | Why it's there                                               |
+| -------------- | -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **web**        | Runs Apache and PHP and serves the app                               | Replaces the Apache/PHP part of AMPPS                        |
+| **db**         | MySQL database with the map points, admin user, and route search log | Replaces AMPPS MySQL and loads `sql_setup/` automatically    |
+| **phpmyadmin** | Web page for browsing the database                                   | Makes it easy to check the data without installing anything |
+
+- **web** uses `php:8.2-apache` with `mysqli`. The repo is mounted at `/var/www/html/WeatherApp` because the app uses `/WeatherApp/...` paths.
+- **db** uses the `sql_setup/` folder as its init folder, so the schema and points load on the first start. The data is kept in a named volume, so it survives restarts.
 
 `db_conn.php` reads `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`, and `DB_PORT` from the environment, and falls back to the old AMPPS values when they aren't set. That way the same code runs in Docker and AMPPS.
 

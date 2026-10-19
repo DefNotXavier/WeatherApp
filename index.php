@@ -7,6 +7,12 @@ if (!empty($_SERVER['PATH_INFO'])) {
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// Start the session up here before any HTML gets sent, otherwise
+// forms/login.php throws "headers already sent" in Docker
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">

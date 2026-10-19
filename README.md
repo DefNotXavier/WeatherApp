@@ -2,6 +2,8 @@
 
 A LAMP-stack web application that displays live weather forecasts along Montana's interstate highways (I-90, I-15, I-94), allowing users to plan routes and view real-time National Weather Service data along their path.
 
+It runs locally with Docker Compose (PHP/Apache, MySQL, and phpMyAdmin) with one command, or on a regular AMPPS install.
+
 ---
 
 ## Project File Structure
@@ -15,7 +17,7 @@ WeatherApp/
 ├── history_lookup.php      # Authenticated route history page
 ├── logout.php              # Session logout
 ├── styles.css              # Custom styles built on top of Bootstrap
-├── App.js                  # Main frontend logic
+├── app.js                  # Main frontend logic
 ├── forms/
 │   ├── login.php           # Admin login form
 │   └── filter.php          # Map filter popup form
@@ -31,6 +33,17 @@ WeatherApp/
 └── sql_setup/
     ├── db_setup.sql         # Creates the database, tables, and accounts
     └── insert_points.sql    # Inserts highway, border, and POI data points
+
+Docker setup
+├── compose.yaml            # web, db, and phpMyAdmin services
+├── .env.example            # Ports and dev database passwords (copy to .env)
+├── docker/web/
+│   ├── Dockerfile          # PHP 8.2 + Apache image
+│   └── apache.conf         # Blocks .env, SQL, and docker files from being served
+└── bin/
+    ├── up                  # Build and start
+    ├── down                # Stop (--wipe also deletes the database)
+    └── reset-db            # Reload the database from sql_setup/
 ```
 
 ---
@@ -53,14 +66,88 @@ WeatherApp/
 
 ---
 
-## Requirements
+## Running with Docker (recommended)
 
-- [AMPPS](https://www.ampps.com/) (Apache, MySQL, PHP)
-- An internet connection (required for live map tiles and weather data)
+You just need [Docker Desktop](https://www.docker.com/products/docker-desktop/) and an internet connection for the map tiles and weather data.
+
+```sh
+git clone https://github.com/DefNotXavier/WeatherApp.git
+cd WeatherApp
+cp .env.example .env
+docker compose up --build
+```
+
+The first start takes a minute while MySQL loads the data from `sql_setup/`. After that:
+
+| What       | Where                                       |
+| ---------- | ------------------------------------------- |
+| App        | http://localhost:8080/WeatherApp/index.php  |
+| phpMyAdmin | http://localhost:8081                       |
+| MySQL      | `localhost:3307` (login info is in `.env`)  |
+
+There are a few helper scripts in `bin/` if you're in Git Bash or a Mac/Linux terminal:
+
+```sh
+./bin/up            # build and start in the background
+./bin/down          # stop (database is kept)
+./bin/down --wipe   # stop and delete the database
+./bin/reset-db      # reload the database from sql_setup/
+```
+
+The code is mounted into the container, so edits to the PHP/JS/CSS show up on refresh without rebuilding. The SQL files only run the first time the database starts, so use `./bin/reset-db` after changing them.
+
+### How it's set up
+
+```mermaid
+flowchart LR
+    browser["Your browser"]
+    nws["National Weather Service API"]
+
+    subgraph docker["Docker Compose"]
+        web["<b>web</b><br/>PHP 8.2 + Apache<br/>:8080"]
+        db[("<b>db</b><br/>MySQL 8.0<br/>:3307")]
+        pma["<b>phpmyadmin</b><br/>:8081"]
+    end
+
+    browser -- "the app" --> web
+    browser -- "view tables" --> pma
+    web -- "points, logins, route log" --> db
+    pma --> db
+    web -- "forecasts" --> nws
+```
+
+| Container      | What it does                                                         | Why it's there                                               |
+| -------------- | -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **web**        | Runs Apache and PHP and serves the app                               | Replaces the Apache/PHP part of AMPPS                        |
+| **db**         | MySQL database with the map points, admin user, and route search log | Replaces AMPPS MySQL and loads `sql_setup/` automatically    |
+| **phpmyadmin** | Web page for browsing the database                                   | Makes it easy to check the data without installing anything |
+
+- **web** uses `php:8.2-apache` with `mysqli`. The repo is mounted at `/var/www/html/WeatherApp` because the app uses `/WeatherApp/...` paths.
+- **db** uses the `sql_setup/` folder as its init folder, so the schema and points load on the first start. The data is kept in a named volume, so it survives restarts.
+
+`db_conn.php` reads `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`, and `DB_PORT` from the environment, and falls back to the old AMPPS values when they aren't set. That way the same code runs in Docker and AMPPS.
+
+### Things I had to fix to get it running in Docker
+
+- `index.php` loads `app.js` but the file was named `App.js`. Windows doesn't care, but Linux does, so the map never loaded. I renamed the file.
+- AMPPS turns on `output_buffering`, which hid some `session_start()` calls that ran after output had already started. The official PHP image doesn't, so they caused "headers already sent" warnings. The session now starts at the top of `index.php`, and the other files only call `session_start()` if a session isn't running yet.
+- The database login was hardcoded in `db_conn.php`. It now comes from environment variables.
+- Since the whole repo is mounted into the web root, `docker/web/apache.conf` blocks `.env`, the SQL scripts, and the Docker files from being served.
+
+### Troubleshooting
+
+- **Port already in use** – change `WEB_PORT`, `PMA_PORT`, or `DB_PORT` in `.env`.
+- **Empty map / no points** – the database probably didn't finish loading. Check `docker compose logs db`, or run `./bin/reset-db`.
+- **Changed a password in `.env` and now nothing connects** – MySQL only reads those values when it first creates the database. Run `./bin/down --wipe` and start it again.
 
 ---
 
-## Installation
+## Running with AMPPS
+
+### Requirements
+
+- [AMPPS](https://www.ampps.com/) (Apache, MySQL, PHP)
+- An internet connection (required for live map tiles and weather data)
 
 ### 1. Copy Project Files
 
@@ -128,5 +215,6 @@ Click **Admin Login** in the navbar to sign in. After logging in, you'll be redi
 ## Tech Stack
 
 - **Backend:** PHP, MySQL
+- **Dev environment:** Docker, Docker Compose
 - **Frontend:** JavaScript, Leaflet.js, Bootstrap
 - **APIs:** National Weather Service (NDFD), OpenStreetMap

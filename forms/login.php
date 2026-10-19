@@ -1,5 +1,8 @@
 <?php
-session_start();
+// index.php already starts the session when it includes this file
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 // Had to use __DIR__ to bypase all the relative paths and use the absolute path
 require __DIR__ . '/../db_conn.php';
 

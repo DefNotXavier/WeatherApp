@@ -1,0 +1,53 @@
+name: montana-route-planner
+
+services:
+  web:
+    build: ./docker/web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      # mount the code so changes show up without rebuilding
+      - ./:/var/www/html/WeatherApp
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: "${MYSQL_DATABASE}"
+      DB_USER: "${MYSQL_USER}"
+      DB_PASS: "${MYSQL_PASSWORD}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    ports:
+      # 3307 so it doesn't fight with a local MySQL/AMPPS on 3306
+      - "${DB_PORT:-3307}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE}"
+      MYSQL_USER: "${MYSQL_USER}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+    volumes:
+      - db_data:/var/lib/mysql
+      # runs db_setup.sql then insert_points.sql the first time the db starts
+      - ./sql_setup:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    environment:
+      PMA_HOST: db
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

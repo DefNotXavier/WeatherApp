@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Build and start everything in the background
+set -e
+cd "$(dirname "$0")/.."
+[ -f .env ] || cp .env.example .env
+docker compose up --build -d
+docker compose ps
+echo
+echo "App:        http://localhost:$(grep '^WEB_PORT=' .env | cut -d= -f2)/WeatherApp/index.php"
+echo "phpMyAdmin: http://localhost:$(grep '^PMA_PORT=' .env | cut -d= -f2)"

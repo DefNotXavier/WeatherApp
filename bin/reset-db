@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# Wipe the database and reload it from sql_setup/
+set -e
+cd "$(dirname "$0")/.."
+docker compose rm -sf db
+docker volume rm montana-route-planner_db_data 2>/dev/null || true
+docker compose up -d db
+echo "Reloading database from sql_setup/ (docker compose logs -f db to watch)"

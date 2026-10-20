@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Open a psql shell in the database container
+cd "$(dirname "$0")/.."
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'

@@ -1,19 +1,3 @@
-<?php
-// Prevent URL manipulation by redirect to index.php
-if (!empty($_SERVER['PATH_INFO'])) {
-    header("Location: /WeatherApp/index.php");
-    exit;
-}
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
-// Start the session up here before any HTML gets sent, otherwise
-// forms/login.php throws "headers already sent" in Docker
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -22,12 +6,41 @@ if (session_status() === PHP_SESSION_NONE) {
     <title>Montana Route Planner</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="/WeatherApp/styles.css" />
+    <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
 <!-- Login and filter popups are hidden until button presses -->
- <?php include 'forms/login.php'; ?>
- <?php include 'forms/filter.php'; ?>
+<div id="popupLogin">
+  <form method="POST" action="/login">
+    <h3 class="text-center mb-3">Admin Login</h3>
+    <div class="mb-3">
+      <label class="form-label">Username</label>
+      <input type="text" name="username" class="form-control" placeholder="Admin" required maxlength="50">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input type="password" name="password" class="form-control" required maxlength="50" placeholder="********">
+    </div>
+    <button type="submit" class="btn btn-dark w-100 mb-2">Sign In</button>
+    <button id="closeLoginBtn" type="button" class="btn btn-dark w-100 mb-2">Close</button>
+  </form>
+</div>
+<!-- shown by app.js when the login redirects back with ?error=1 -->
+<div id="login-error" class="alert alert-danger small d-none">Invalid username or password
+  <button type="button" class="btn-close float-end" data-bs-dismiss="alert"></button>
+</div>
+
+<div id="popupFilter">
+  <h3 class="text-center mb-3">Filter Points</h3>
+  <div class="d-flex flex-column gap-2">
+    <button class="btn btn-outline-secondary w-100 filter-btn active" data-value="highway">Highways</button>
+    <button class="btn btn-outline-secondary w-100 filter-btn " data-value="city">Cities & Towns</button>
+    <button class="btn btn-outline-secondary w-100 filter-btn " data-value="pass">Mountain Passes</button>
+    <button class="btn btn-outline-secondary w-100 filter-btn " data-value="sasquatch">Sasquatch Sightings</button>
+  </div>
+  <button id="closeFilterBtn" class="btn btn-dark w-100 mt-3">Close</button>
+</div>
+
 <div id="app">
     <nav class="navbar navbar-dark bg-dark px-3 flex-shrink-0">
         <span class="navbar-brand mb-0 h1">Montana Route Planner</span>
@@ -56,11 +69,13 @@ if (session_status() === PHP_SESSION_NONE) {
             <div class="d-flex align-items-center justify-content-between px-2">
                 <button id="prev-btn" class="btn btn-dark" style="font-size: 2rem; line-height:1; padding: 0.2rem 1rem;">←</button>
                 <div class="d-flex flex-column align-items-center gap-1">
-                    <div id="route-index-text" class="fw-bold small">POINT 1 OF 0</div>
+                    <div id="route-index-text" class="fw-bold small">CHECKPOINT 1 OF 0</div>
                     <button id="autoplay-btn" class="btn btn-outline-dark btn-sm" disabled>▶ Autoplay</button>
                 </div>
                 <button id="next-btn" class="btn btn-dark" style="font-size: 2rem; line-height:1; padding: 0.2rem 1rem;">→</button>
             </div>
+            <!-- Route summary: distance, highways, and what's along the way -->
+            <div id="route-summary" class="text-center small text-muted px-3 pt-1"></div>
         </div>
             <!-- Progress bar shown while prefetching weather for all route points -->
             <div id="prefetch-bar" class="d-none px-3 py-2 bg-light border-bottom">
@@ -86,6 +101,6 @@ if (session_status() === PHP_SESSION_NONE) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <!-- this is the main app logic is app.js -->
-<script src="/WeatherApp/app.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

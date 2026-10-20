@@ -1,53 +1,56 @@
 name: montana-route-planner
 
 services:
-  web:
-    build: ./docker/web
+  app:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     ports:
-      - "${WEB_PORT:-8080}:80"
-    volumes:
-      # mount the code so changes show up without rebuilding
-      - ./:/var/www/html/WeatherApp
+      - "${APP_PORT:-8080}:8080"
     environment:
-      DB_HOST: db
-      DB_PORT: "3306"
-      DB_NAME: "${MYSQL_DATABASE}"
-      DB_USER: "${MYSQL_USER}"
-      DB_PASS: "${MYSQL_PASSWORD}"
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
+      REDIS_ADDR: "redis:6379"
+      NWS_USER_AGENT: "${NWS_USER_AGENT}"
+    volumes:
+      # mount the frontend so HTML/JS/CSS edits show up on refresh
+      - ./web:/app/web:ro
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
-    image: mysql:8.0
+    image: postgis/postgis:16-3.4
     ports:
-      # 3307 so it doesn't fight with a local MySQL/AMPPS on 3306
-      - "${DB_PORT:-3307}:3306"
+      # 5433 so it doesn't fight with a local Postgres on 5432
+      - "${DB_PORT:-5433}:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
-      MYSQL_DATABASE: "${MYSQL_DATABASE}"
-      MYSQL_USER: "${MYSQL_USER}"
-      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
     volumes:
-      - db_data:/var/lib/mysql
-      # runs db_setup.sql then insert_points.sql the first time the db starts
-      - ./sql_setup:/docker-entrypoint-initdb.d:ro
+      - pg_data:/var/lib/postgresql/data
+      # runs the schema, map data, and routing view the first time the db starts
+      - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      # -h 127.0.0.1 so this only passes once the init scripts are done
+      # (Postgres only listens on a socket while they run)
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 30s
 
-  phpmyadmin:
-    image: phpmyadmin:5
+  redis:
+    image: redis:7-alpine
     ports:
-      - "${PMA_PORT:-8081}:80"
-    environment:
-      PMA_HOST: db
-    depends_on:
-      db:
-        condition: service_healthy
+      - "${REDIS_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
-  db_data:
+  pg_data:

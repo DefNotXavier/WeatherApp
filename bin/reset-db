@@ -1,8 +1,10 @@
 #!/usr/bin/env sh
-# Wipe the database and reload it from sql_setup/
+# Wipe the database and reload it from db/, then restart the app so it
+# rebuilds its routing graph
 set -e
 cd "$(dirname "$0")/.."
 docker compose rm -sf db
-docker volume rm montana-route-planner_db_data 2>/dev/null || true
-docker compose up -d db
-echo "Reloading database from sql_setup/ (docker compose logs -f db to watch)"
+docker volume rm montana-route-planner_pg_data 2>/dev/null || true
+docker compose up -d --wait db
+docker compose restart app
+echo "Database reloaded from db/"

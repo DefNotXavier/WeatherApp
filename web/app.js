@@ -6,10 +6,10 @@ document.addEventListener("DOMContentLoaded", function () {
   const highwayColors = { "I-90": "blue", "I-15": "red", "I-94": "green" };
   let isPlanning = false,
     startPoint = null,
-    activeRoute = [];
+    activeRoute = [],
+    routeInfo = null;
   let routeLine = null,
-    currentIndex = 0,
-    allPointsGrouped = {};
+    currentIndex = 0;
   let allMarkers = [],
     activeWalkthroughMarker = null;
   let panelOpen = false,
@@ -17,7 +17,6 @@ document.addEventListener("DOMContentLoaded", function () {
     filterOpen = false;
   let weatherCache = {},
     autoplayInterval = null;
-  let graph = {};
   const bottomPanel = document.getElementById("bottom-panel");
   const panelContent = document.getElementById("panel-content");
   const planBtn = document.getElementById("plan-btn");
@@ -27,60 +26,53 @@ document.addEventListener("DOMContentLoaded", function () {
   const popupFilter = document.getElementById("popupFilter");
   const openFilterBtn = document.getElementById("openFilterBtn");
 
-  // ---------------------------------------------------- Grab the border points for montana and draw an outline around montana
-  fetch("plot_points/border_points.php")
+  // the login redirects back here with ?error=1 if the password was wrong
+  if (new URLSearchParams(location.search).has("error"))
+    document.getElementById("login-error").classList.remove("d-none");
+
+  // ---------------------------------------------------- Draw the outline of montana
+  // All the map data comes from the Go API as GeoJSON, straight out of PostGIS
+  fetch("/api/border")
     .then((r) => r.json())
-    .then((points) => {
-      L.polygon(
-        points.map((p) => [parseFloat(p.lat), parseFloat(p.lng)]),
-        {
-          color: "black",
-          weight: 2,
-          fill: false,
-          interactive: false,
-        },
-      ).addTo(map);
+    .then((border) => {
+      L.geoJSON(border, {
+        style: { color: "black", weight: 2, fill: false },
+        interactive: false,
+      }).addTo(map);
     });
 
-  // ---------------------------------------------------- Grab and plot all the highway points on montana,
-  fetch("plot_points/highway_points.php")
+  // ---------------------------------------------------- Draw the highways
+  // Each highway is one line now instead of a bunch of points. Clicking anywhere
+  // on a line gets the weather there, or picks it as a route start/end
+  fetch("/api/highways")
     .then((r) => r.json())
-    .then((grouped) => {
-      allPointsGrouped = grouped;
-      // object.keys to turn out object into an array, then loop through each arrary in that (highway), and loop
-      // through each point
-      Object.keys(grouped).forEach((highway) => {
-        grouped[highway].forEach((p) => {
-          // Make each point a marker on the map with coords, and fill with the right color
-          const marker = L.circleMarker([p.lat, p.lng], {
-            radius: 2,
-            fillColor: highwayColors[highway],
-            color: highwayColors[highway],
-            weight: 0.5,
-            fillOpacity: 0.8,
-          }).addTo(map);
-          // put a hover on the point to show the name if not N/a, else the coords
-          marker.bindTooltip(
-            p.name !== "N/A" ? p.name : `(${p.lat}, ${p.lng})`,
-          );
-          // bind the point data to the marker
-          marker.pointData = p;
-          // add this to our all Marker tracker so we odnt need to use DB
-          allMarkers.push(marker);
-          // atach a click listener to each point to eaither do route selection or solo weather
-          marker.on("click", () =>
-            isPlanning ? handleRouteSelection(p) : openWeatherForPoint(p),
-          );
+    .then((highways) => {
+      highways.features.forEach((f) => {
+        const name = f.properties.name;
+        const line = L.geoJSON(f, {
+          style: { color: highwayColors[name], weight: 5, opacity: 0.8 },
+        }).addTo(map);
+        line.bindTooltip(name, { sticky: true });
+        // treat the line like a marker so the filters work the same way
+        line.pointData = { point_type: "highway", name };
+        allMarkers.push(line);
+        line.on("click", (e) => {
+          const p = {
+            name,
+            lat: +e.latlng.lat.toFixed(4),
+            lng: +e.latlng.lng.toFixed(4),
+          };
+          isPlanning ? handleRouteSelection(p) : openWeatherForPoint(p);
         });
       });
-      // turn the highway points into a graph for routing
-      buildGraph();
+      // Default to showing only highways not all the POI
+      applyFilters();
     });
 
   // ---------------------------------------------------- fetch and plot all the Points of interest w/ icon png
-  fetch("plot_points/poi_points.php")
+  fetch("/api/pois")
     .then((r) => r.json())
-    .then((points) => {
+    .then((pois) => {
       // define icons for the Points of Interest
       const icons = {
         city: L.icon({
@@ -99,12 +91,11 @@ document.addEventListener("DOMContentLoaded", function () {
           iconAnchor: [14, 14],
         }),
       };
-      // attach the lat and long data to each marker and the correct icon, and add to the map
-      points.forEach((p) => {
-        const marker = L.marker([parseFloat(p.lat), parseFloat(p.lng)], {
-          icon: icons[p.point_type],
-        }).addTo(map);
-        // same as above, attach the name, and coord to the point and then add a click listener
+      // GeoJSON coordinates are [lng, lat], so flip them for leaflet
+      pois.features.forEach((f) => {
+        const [lng, lat] = f.geometry.coordinates;
+        const p = { ...f.properties, point_type: f.properties.type, lat, lng };
+        const marker = L.marker([lat, lng], { icon: icons[p.type] }).addTo(map);
         marker.bindTooltip(p.name);
         marker.pointData = p;
         allMarkers.push(marker);
@@ -112,46 +103,8 @@ document.addEventListener("DOMContentLoaded", function () {
           isPlanning ? handleRouteSelection(p) : openWeatherForPoint(p),
         );
       });
-      // Default to showing only highways not all the POI
       applyFilters();
     });
-
-  // ---------------------------------------------------- Build the routing graph
-  // Every point is a node, keyed by its coords so a junction that shows up on two
-  // highways becomes one node. Points next to each other on a highway get an edge
-  // weighted by the distance between them in miles.
-  function buildGraph() {
-    graph = {};
-    for (const h in allPointsGrouped) {
-      const pts = allPointsGrouped[h];
-      pts.forEach((p) => {
-        const k = keyOf(p);
-        if (!graph[k]) graph[k] = { points: {}, edges: [] };
-        // keep each highway's copy of the point so the route keeps the right highway name
-        graph[k].points[h] = p;
-      });
-      for (let i = 1; i < pts.length; i++) {
-        const a = keyOf(pts[i - 1]);
-        const b = keyOf(pts[i]);
-        const miles = distanceMiles(pts[i - 1], pts[i]);
-        graph[a].edges.push({ to: b, miles, highway: h });
-        graph[b].edges.push({ to: a, miles, highway: h });
-      }
-    }
-  }
-
-  const keyOf = (p) => `${p.lat},${p.lng}`;
-
-  // ---------------------------------------------------- Distance between two points in miles (haversine formula)
-  function distanceMiles(a, b) {
-    const toRad = (d) => (d * Math.PI) / 180;
-    const dLat = toRad(b.lat - a.lat);
-    const dLng = toRad(b.lng - a.lng);
-    const x =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-    return 3958.8 * 2 * Math.asin(Math.sqrt(x));
-  }
 
   // ---------------------------------------------------- Map will only show the applied filter(s)
   function applyFilters() {
@@ -173,128 +126,70 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ---------------------------------------------------- Routing
+  // The server does the routing now: it snaps both points to the nearest highway
+  // with PostGIS, runs Dijkstra in Go, and sends back the route line plus weather
+  // checkpoints spaced every 15 miles
   function handleRouteSelection(clickedPoint) {
-    // Route selection has to snap to the nearest highway point if not already a highway point
-    const snapped = snapToNearest(clickedPoint);
     if (!startPoint) {
-      startPoint = snapped;
+      startPoint = clickedPoint;
       document.getElementById("status").innerHTML =
-        `START SET: ${snapped.highway}. <span class="text-secondary">CLICK DESTINATION</span>`;
+        `START SET: ${clickedPoint.name}. <span class="text-secondary">CLICK DESTINATION</span>`;
       return;
     }
-    const route = findRoute(startPoint, snapped);
-    activeRoute = route;
-    isPlanning = false;
-
-    // Log the search
-    const first = route[0];
-    const last = route[route.length - 1];
-
-    fetch("log_route.php", {
+    document.getElementById("status").textContent = "FINDING ROUTE...";
+    fetch("/api/routes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        start_lat: first.lat,
-        start_lng: first.lng,
-        start_highway: first.highway,
-        end_lat: last.lat,
-        end_lng: last.lng,
-        end_highway: last.highway,
-        route_length: route.length,
+        from: { lat: startPoint.lat, lng: startPoint.lng },
+        to: { lat: clickedPoint.lat, lng: clickedPoint.lng },
       }),
-    });
-    startWalkthrough();
-  }
-
-  // ----------------------------------------------------------------- Function to snap a POI to the nearest highway point
-  function snapToNearest(point) {
-    // if intermediate, junction or border point dont need a close highway point then
-    if (
-      point.point_type === "intermediate" ||
-      point.point_type === "junction" ||
-      point.point_type === "border"
-    ) {
-      return point;
-    }
-
-    // find the actual highway point object by id, in my data schema
-    for (const h in allPointsGrouped) {
-      const found = allPointsGrouped[h].find(
-        (p) => p.id === point.nearest_highway_pt,
-      );
-      if (found) return found;
-    }
-    // Wont happen with how schema is set up, but if not found return original point
-    return point;
-  }
-
-  //---------------------------------------------------------------------------------- Func to find a route between start and end
-  // MOST COMPLEX FUNCTION in my opinion
-  // Dijkstra's shortest path over the highway graph, so it works with any number of
-  // junctions and always picks the shortest way instead of the first one it finds
-  function findRoute(s, e) {
-    const start = keyOf(s);
-    const end = keyOf(e);
-    if (!graph[start] || !graph[end]) return null;
-
-    const dist = { [start]: 0 };
-    // prev[node] = the node and highway we came from on the shortest path
-    const prev = {};
-    const visited = new Set();
-    const queue = [start];
-
-    while (queue.length) {
-      // grab the closest unvisited node, the graph is small enough that a sort is fine
-      queue.sort((a, b) => dist[a] - dist[b]);
-      const cur = queue.shift();
-      if (visited.has(cur)) continue;
-      visited.add(cur);
-      if (cur === end) break;
-
-      for (const edge of graph[cur].edges) {
-        const d = dist[cur] + edge.miles;
-        if (dist[edge.to] === undefined || d < dist[edge.to]) {
-          dist[edge.to] = d;
-          prev[edge.to] = { from: cur, highway: edge.highway };
-          queue.push(edge.to);
+    })
+      .then((r) => r.json())
+      .then((route) => {
+        if (route.error) {
+          document.getElementById("status").textContent = route.error;
+          startPoint = null;
+          return;
         }
-      }
-    }
-    // wont happen with my set up, but no route found
-    if (!visited.has(end)) return null;
-    if (start === end) return [s];
-
-    // walk back from the end to the start, using the point from the highway we drove in on
-    const route = [];
-    let k = end;
-    while (k !== start) {
-      route.unshift(graph[k].points[prev[k].highway]);
-      k = prev[k].from;
-    }
-    // the start point uses the highway of the first stretch of road
-    const firstHighway = prev[keyOf(route[0])].highway;
-    route.unshift(graph[start].points[firstHighway]);
-    return route;
+        isPlanning = false;
+        routeInfo = route;
+        // each checkpoint gets a name so the status bar says where you are
+        activeRoute = route.checkpoints.map((c) => ({
+          ...c,
+          name: `Mile ${Math.round(c.mile)} · ${c.highway}`,
+        }));
+        startWalkthrough();
+      });
   }
 
   // ---------------------------------------------------- Walk Through Functionality start
   function startWalkthrough() {
-    // hides all other markers so route is distinct
+    // hides all other markers so route is distinct, but keep the points of interest along the way
     hideAllMarkers();
-    // Define the start and end coordinates from your route
-    const sPoint = activeRoute[0];
-    const ePoint = activeRoute[activeRoute.length - 1];
+    const nearbyIds = new Set(routeInfo.nearby.map((p) => p.id));
+    allMarkers
+      .filter((m) => nearbyIds.has(m.pointData.id))
+      .forEach((m) => m.addTo(map));
 
     // make the next, prev and auot play button visuable
     document.getElementById("route-nav").classList.remove("d-none");
     // disable the play button while weather info loads
     document.getElementById("autoplay-btn").disabled = true;
-    // draw the route line using polyline and points of route
+    // draw the route line, it comes back from the server as GeoJSON
     if (routeLine) map.removeLayer(routeLine);
-    routeLine = L.polyline(
-      activeRoute.map((pt) => [pt.lat, pt.lng]),
-      { color: "blue", weight: 4, opacity: 0.5 },
-    ).addTo(map);
+    routeLine = L.geoJSON(routeInfo.line, {
+      style: { color: "blue", weight: 6, opacity: 0.5 },
+    }).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+
+    // distance, highways, and the towns and passes you go through
+    const along = routeInfo.nearby
+      .filter((p) => p.type !== "sasquatch")
+      .map((p) => p.name);
+    document.getElementById("route-summary").textContent =
+      `${Math.round(routeInfo.distance_miles)} miles · ${routeInfo.highways.join(" → ")}` +
+      (along.length ? ` · Through ${along.join(", ")}` : "");
     currentIndex = 0;
     updateWalkthroughStep();
     prefetchAllWeather(activeRoute);
@@ -319,7 +214,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // grab the route-index-text and update it
     document.getElementById("route-index-text").textContent =
-      `POINT ${currentIndex + 1} OF ${activeRoute.length}`;
+      `CHECKPOINT ${currentIndex + 1} OF ${activeRoute.length}`;
     // get the weather for each point
     openWeatherForPoint(p);
   }
@@ -343,6 +238,8 @@ document.addEventListener("DOMContentLoaded", function () {
     isPlanning = false;
     startPoint = null;
     activeRoute = [];
+    routeInfo = null;
+    document.getElementById("route-summary").textContent = "";
     // only close pannel if told to, else infinite loop
     if (closePanel) togglePanel(false);
   }
@@ -410,10 +307,10 @@ document.addEventListener("DOMContentLoaded", function () {
       renderWeather(cached);
       return;
     }
-    // else remove spinner, and fetch the weather using get_weather, parse response and call render Weather
+    // else remove spinner, and fetch the weather from /api/weather, parse response and call render Weather
     document.getElementById("weather-spinner").classList.remove("d-none");
     document.getElementById("weather-content").innerHTML = "";
-    fetch(`get_weather.php?lat=${point.lat}&lng=${point.lng}`)
+    fetch(`/api/weather?lat=${point.lat}&lng=${point.lng}`)
       .then((r) => r.json())
       .then(renderWeather);
   }
@@ -478,7 +375,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // promise to get ALL the weather data and store in the cache and increment the loader bar
     await Promise.all(
       route.map((point, i) =>
-        fetch(`get_weather.php?lat=${point.lat}&lng=${point.lng}`)
+        fetch(`/api/weather?lat=${point.lat}&lng=${point.lng}`)
           .then((r) => r.json())
           .catch(() =>
             renderWeatherError("Could not reach the weather service."),

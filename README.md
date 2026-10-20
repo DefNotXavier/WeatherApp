@@ -1,7 +1,5 @@
 # Montana Route Planner
 
-![CI](https://github.com/DefNotXavier/WeatherApp/actions/workflows/ci.yml/badge.svg)
-
 A web app for planning drives along Montana's interstates (I-90, I-15, I-94) and checking the National Weather Service forecast along the way. Pick a start and an end on the map, and it finds the shortest route, drops a weather checkpoint every 15 miles, and steps you through the forecast at each one.
 
 The backend is a Go API on PostgreSQL + PostGIS with a Redis cache, and the whole thing runs with one `docker compose up`.
@@ -129,25 +127,6 @@ Click **Admin Login** in the navbar. Sessions are random tokens stored in Redis 
 
 ---
 
-## Tests
-
-```sh
-cd server
-go test ./...                       # unit tests, no database needed
-
-# with the stack running, this also runs the PostGIS integration tests
-TEST_DATABASE_URL=postgres://montana:dev_db_pw@localhost:5433/montana_planner go test ./...
-```
-
-- `geo` covers the graph, Dijkstra (shortest path, multiple junctions, unreachable points), and checkpoint spacing
-- `weather` runs against a fake NWS server: cache hits, sharing in-flight requests, retries, and Redis being down
-- `api` covers the handlers with fake stores: route planning, input validation, login, and the history page
-- `store` runs against the real database: GeoJSON output, snapping, and a full Helena → Glendive route across all three interstates
-
-GitHub Actions runs gofmt, `go vet`, the whole test suite with the race detector against the real compose stack, and a smoke test of the running app on every push and pull request.
-
----
-
 ## API
 
 | Method | Path            | Returns |
@@ -170,7 +149,7 @@ WeatherApp/
 ├── server/                 Go API
 │   ├── main.go             config and startup
 │   ├── api/                HTTP handlers, login, history page template
-│   ├── geo/                graph, Dijkstra, checkpoints (no dependencies)
+│   ├── geo/                graph, Dijkstra, checkpoints
 │   ├── store/              PostGIS queries
 │   ├── weather/            NWS client and Redis cache
 │   ├── auth/               Redis sessions
@@ -181,8 +160,7 @@ WeatherApp/
 │   ├── 02_data.sql         highways, border, and points of interest as geometries
 │   └── 03_routing_nodes.sql
 ├── bin/                    helper scripts
-├── compose.yaml
-└── .github/workflows/ci.yml
+└── compose.yaml
 ```
 
 ---
@@ -193,7 +171,7 @@ This started as my CSCI 470 project, a PHP/MySQL (LAMP) app that ran on AMPPS. S
 
 1. Containerized it with Docker Compose
 2. Replaced the hardcoded junction routing with Dijkstra's algorithm
-3. Moved the data into PostGIS geometries and rewrote the backend in Go with Redis caching, tests, and CI
+3. Moved the data into PostGIS geometries and rewrote the backend in Go with Redis caching
 
 The original PHP version is tagged [`v1-lamp`](https://github.com/DefNotXavier/WeatherApp/tree/v1-lamp).
 
@@ -211,4 +189,4 @@ The original PHP version is tagged [`v1-lamp`](https://github.com/DefNotXavier/W
 - **Database:** PostgreSQL 16 + PostGIS 3.4
 - **Cache and sessions:** Redis 7
 - **Frontend:** JavaScript, Leaflet.js, Bootstrap
-- **Infrastructure:** Docker, Docker Compose, GitHub Actions
+- **Infrastructure:** Docker, Docker Compose

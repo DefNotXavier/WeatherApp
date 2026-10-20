@@ -56,6 +56,7 @@ Docker setup
 - Click any point to view its NWS weather forecast
 - Filter map points by type (highways, cities, mountain passes, sasquatch sightings)
 - Plan a route by selecting a start and end point on the map (requires an active filter)
+- Routes are found with Dijkstra's shortest path over a graph of the highway points (see [How routing works](#how-routing-works))
 - Step through the route's weather forecasts point by point, automatically or manually
 
 **Authenticated**
@@ -63,6 +64,19 @@ Docker setup
 - View the full history of logged route searches
 - See start/end coordinates, highways used, route length, and timestamp for each search
 - Data is pulled live from the `search_log` table in the `montana_planner` database
+
+---
+
+## How routing works
+
+The highway points are turned into a graph when the map loads (`buildGraph()` in `app.js`):
+
+- Each point is a node. Junctions like Butte (I-90/I-15) and Billings (I-90/I-94) are stored once per highway in the database, but they share coordinates, so they become one node that connects the highways.
+- Points next to each other on the same highway are connected by an edge, weighted by the distance between them in miles (haversine formula).
+
+`findRoute()` then runs Dijkstra's algorithm from the start point to the end point. It always returns the shortest route, it works with any number of highway changes, and adding a new highway only takes new rows in `insert_points.sql`, no code changes.
+
+The first version handled routes with hardcoded cases (same highway, one junction, two junctions) and took the first match it found. That worked for three interstates but would have needed more nested loops for every new highway.
 
 ---
 

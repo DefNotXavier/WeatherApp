@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", function () {
     filterOpen = false;
   let weatherCache = {},
     autoplayInterval = null;
-  let junctions = [];
+  let graph = {};
   const bottomPanel = document.getElementById("bottom-panel");
   const panelContent = document.getElementById("panel-content");
   const planBtn = document.getElementById("plan-btn");
@@ -73,8 +73,8 @@ document.addEventListener("DOMContentLoaded", function () {
           );
         });
       });
-      // gets all of our junction points
-      loadJunctions();
+      // turn the highway points into a graph for routing
+      buildGraph();
     });
 
   // ---------------------------------------------------- fetch and plot all the Points of interest w/ icon png
@@ -116,14 +116,41 @@ document.addEventListener("DOMContentLoaded", function () {
       applyFilters();
     });
 
-  // ---------------------------------------------------- Function to get / store all junction points
-  function loadJunctions() {
+  // ---------------------------------------------------- Build the routing graph
+  // Every point is a node, keyed by its coords so a junction that shows up on two
+  // highways becomes one node. Points next to each other on a highway get an edge
+  // weighted by the distance between them in miles.
+  function buildGraph() {
+    graph = {};
     for (const h in allPointsGrouped) {
-      const found = allPointsGrouped[h].filter(
-        (p) => p.point_type === "junction",
-      );
-      junctions.push(...found);
+      const pts = allPointsGrouped[h];
+      pts.forEach((p) => {
+        const k = keyOf(p);
+        if (!graph[k]) graph[k] = { points: {}, edges: [] };
+        // keep each highway's copy of the point so the route keeps the right highway name
+        graph[k].points[h] = p;
+      });
+      for (let i = 1; i < pts.length; i++) {
+        const a = keyOf(pts[i - 1]);
+        const b = keyOf(pts[i]);
+        const miles = distanceMiles(pts[i - 1], pts[i]);
+        graph[a].edges.push({ to: b, miles, highway: h });
+        graph[b].edges.push({ to: a, miles, highway: h });
+      }
     }
+  }
+
+  const keyOf = (p) => `${p.lat},${p.lng}`;
+
+  // ---------------------------------------------------- Distance between two points in miles (haversine formula)
+  function distanceMiles(a, b) {
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const x =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 3958.8 * 2 * Math.asin(Math.sqrt(x));
   }
 
   // ---------------------------------------------------- Map will only show the applied filter(s)
@@ -203,78 +230,51 @@ document.addEventListener("DOMContentLoaded", function () {
 
   //---------------------------------------------------------------------------------- Func to find a route between start and end
   // MOST COMPLEX FUNCTION in my opinion
+  // Dijkstra's shortest path over the highway graph, so it works with any number of
+  // junctions and always picks the shortest way instead of the first one it finds
   function findRoute(s, e) {
-    // helper to find the position of a point in a specific highway's array using findIndex built in
-    const indexOf = (h, p) =>
-      allPointsGrouped[h].findIndex((x) => x.lat === p.lat && x.lng === p.lng);
+    const start = keyOf(s);
+    const end = keyOf(e);
+    if (!graph[start] || !graph[end]) return null;
 
-    // helper that when given the highway and point a and b, return all the points between them, correct direction
-    const segment = (h, a, b) =>
-      a <= b
-        ? allPointsGrouped[h].slice(a, b + 1)
-        : allPointsGrouped[h].slice(b, a + 1).reverse();
+    const dist = { [start]: 0 };
+    // prev[node] = the node and highway we came from on the shortest path
+    const prev = {};
+    const visited = new Set();
+    const queue = [start];
 
-    // ZERO JUNCTION CASE - Loop thru all the higwhays and find one that has start and end
-    for (const h in allPointsGrouped) {
-      const si = indexOf(h, s);
-      const ei = indexOf(h, e);
-      if (si !== -1 && ei !== -1) return segment(h, si, ei);
-    }
+    while (queue.length) {
+      // grab the closest unvisited node, the graph is small enough that a sort is fine
+      queue.sort((a, b) => dist[a] - dist[b]);
+      const cur = queue.shift();
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      if (cur === end) break;
 
-    // 1 JUNCTION CASE - Loop thru highways and find one with start to junction and another with j1 to end
-    for (const h1 in allPointsGrouped) {
-      const si = indexOf(h1, s);
-      if (si === -1) continue;
-      for (const h2 in allPointsGrouped) {
-        if (h2 === h1) continue;
-        const ei = indexOf(h2, e);
-        if (ei === -1) continue;
-        // find a junction that exists on both h1 and h2
-        const junc = junctions.find(
-          (j) => indexOf(h1, j) !== -1 && indexOf(h2, j) !== -1,
-        );
-        if (!junc) continue;
-        // spread operator to flatten arrays an slice to remove duplicate junc pt
-        return [
-          ...segment(h1, si, indexOf(h1, junc)),
-          ...segment(h2, indexOf(h2, junc), ei).slice(1),
-        ];
-      }
-    }
-
-    // 2 JUNCTION CASE - same as junction case above, but one more junction in the middle
-    for (const h1 in allPointsGrouped) {
-      const si = indexOf(h1, s);
-      if (si === -1) continue;
-      for (const h2 in allPointsGrouped) {
-        if (h2 === h1) continue;
-        const ei = indexOf(h2, e);
-        if (ei === -1) continue;
-        for (const hm in allPointsGrouped) {
-          if (hm === h1 || hm === h2) continue;
-          // find junction between h1 and middle highway
-          const j1 = junctions.find(
-            (j) => indexOf(h1, j) !== -1 && indexOf(hm, j) !== -1,
-          );
-          // find junction between middle highway and h2
-          const j2 = junctions.find(
-            (j) => indexOf(hm, j) !== -1 && indexOf(h2, j) !== -1,
-          );
-          if (!j1 || !j2) continue;
-          // use spread operator to flathen arraw, and slice to remove duplicate junction points
-          return [
-            // start -> j1 on h1
-            ...segment(h1, si, indexOf(h1, j1)),
-            // j1 -> j2
-            ...segment(hm, indexOf(hm, j1), indexOf(hm, j2)).slice(1),
-            // j2 -> end on h2
-            ...segment(h2, indexOf(h2, j2), ei).slice(1),
-          ];
+      for (const edge of graph[cur].edges) {
+        const d = dist[cur] + edge.miles;
+        if (dist[edge.to] === undefined || d < dist[edge.to]) {
+          dist[edge.to] = d;
+          prev[edge.to] = { from: cur, highway: edge.highway };
+          queue.push(edge.to);
         }
       }
     }
     // wont happen with my set up, but no route found
-    return null;
+    if (!visited.has(end)) return null;
+    if (start === end) return [s];
+
+    // walk back from the end to the start, using the point from the highway we drove in on
+    const route = [];
+    let k = end;
+    while (k !== start) {
+      route.unshift(graph[k].points[prev[k].highway]);
+      k = prev[k].from;
+    }
+    // the start point uses the highway of the first stretch of road
+    const firstHighway = prev[keyOf(route[0])].highway;
+    route.unshift(graph[start].points[firstHighway]);
+    return route;
   }
 
   // ---------------------------------------------------- Walk Through Functionality start

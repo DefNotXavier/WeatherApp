@@ -89,13 +89,15 @@ func (c *Client) Forecast(ctx context.Context, lat, lng float64) ([]Period, bool
 		}
 	}
 
+	// the request is shared, so one caller giving up shouldn't cancel it for the rest
+	shared := context.WithoutCancel(ctx)
 	v, err, _ := c.group.Do(key, func() (any, error) {
 		var body struct {
 			Properties struct {
 				Periods []Period `json:"periods"`
 			} `json:"properties"`
 		}
-		if err := c.getJSON(ctx, forecastURL, &body); err != nil {
+		if err := c.getJSON(shared, forecastURL, &body); err != nil {
 			return nil, err
 		}
 		periods := body.Properties.Periods
@@ -106,7 +108,7 @@ func (c *Client) Forecast(ctx context.Context, lat, lng float64) ([]Period, bool
 			periods = periods[:periodsShown]
 		}
 		if b, err := json.Marshal(periods); err == nil {
-			c.cacheSet(ctx, key, string(b), forecastTTL)
+			c.cacheSet(shared, key, string(b), forecastTTL)
 		}
 		return periods, nil
 	})
@@ -125,13 +127,14 @@ func (c *Client) forecastURL(ctx context.Context, lat, lng float64) (string, err
 		return v, nil
 	}
 
+	shared := context.WithoutCancel(ctx)
 	v, err, _ := c.group.Do(key, func() (any, error) {
 		var body struct {
 			Properties struct {
 				Forecast string `json:"forecast"`
 			} `json:"properties"`
 		}
-		if err := c.getJSON(ctx, c.BaseURL+"/points/"+coords, &body); err != nil {
+		if err := c.getJSON(shared, c.BaseURL+"/points/"+coords, &body); err != nil {
 			return "", err
 		}
 		u := body.Properties.Forecast
@@ -139,7 +142,7 @@ func (c *Client) forecastURL(ctx context.Context, lat, lng float64) (string, err
 		if u == "" || !strings.HasPrefix(u, c.BaseURL+"/") {
 			return "", ErrNoForecast
 		}
-		c.cacheSet(ctx, key, u, pointTTL)
+		c.cacheSet(shared, key, u, pointTTL)
 		return u, nil
 	})
 	if err != nil {

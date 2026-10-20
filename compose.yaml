@@ -11,6 +11,7 @@ services:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}"
       REDIS_ADDR: "redis:6379"
       NWS_USER_AGENT: "${NWS_USER_AGENT}"
+      TZ: America/Denver
     volumes:
       # mount the frontend so HTML/JS/CSS edits show up on refresh
       - ./web:/app/web:ro

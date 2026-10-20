@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the distroless image has no time zone files
 
 	"github.com/DefNotXavier/WeatherApp/server/api"
 	"github.com/DefNotXavier/WeatherApp/server/auth"

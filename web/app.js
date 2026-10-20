@@ -216,7 +216,7 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("route-index-text").textContent =
       `CHECKPOINT ${currentIndex + 1} OF ${activeRoute.length}`;
     // get the weather for each point
-    openWeatherForPoint(p);
+    openWeatherForPoint(p, currentIndex);
   }
   // ---------------------------------------------------- Reset Map Ui
   function resetMapUI(closePanel = true) {
@@ -293,16 +293,16 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // ---------------------------------------------------- Grab weather for point
-  function openWeatherForPoint(point) {
+  function openWeatherForPoint(point, routeIndex) {
     // auto open pannel if not already open
     if (!panelOpen) togglePanel(true);
     // if just invidual point selction, change the status text accordingly
     if (!isPlanning)
       document.getElementById("status").textContent =
         point.name !== "N/A" ? point.name : `(${point.lat}, ${point.lng})`;
-    // if there is a cache of data use that to get the weather point
+    // route checkpoints use the prefetched weather, a normal click on the map doesn't
     const cached =
-      activeRoute.length > 0 ? weatherCache[currentIndex] : undefined;
+      routeIndex !== undefined ? weatherCache[routeIndex] : undefined;
     if (cached !== undefined) {
       renderWeather(cached);
       return;

@@ -63,6 +63,11 @@ func (s *Server) planRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if from.Point == to.Point {
+		writeError(w, http.StatusUnprocessableEntity, "start and end snap to the same spot, pick two places farther apart")
+		return
+	}
+
 	route, err := s.Graph.ShortestPath(from.Point, to.Point)
 	if errors.Is(err, geo.ErrNoRoute) {
 		writeError(w, http.StatusUnprocessableEntity, "no route between those points")
